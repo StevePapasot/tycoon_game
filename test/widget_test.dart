@@ -122,52 +122,55 @@ void main() {
     expect(upgradeButton(tester, 'tier_1').enabled, isTrue);
   });
 
-  testWidgets('pausing saves; resuming awards offline earnings and shows '
-      'Welcome Back', (tester) async {
-    await pumpGame(tester);
-    await tester.tap(find.byKey(const ValueKey('upgrade_tier_1')));
-    await tester.pump();
+  testWidgets(
+    'backgrounding saves; returning awards offline earnings and shows '
+    'Welcome Back',
+    (tester) async {
+      await pumpGame(tester);
+      await tester.tap(find.byKey(const ValueKey('upgrade_tier_1')));
+      await tester.pump();
 
-    await backgroundApp(tester);
-    expect(
-      preferences.getInt(SaveRepository.lastPlayedTimestampKey),
-      now.millisecondsSinceEpoch,
-    );
-    final saved =
-        jsonDecode(preferences.getString(SaveRepository.gameStateKey)!)
-            as Map<String, Object?>;
-    expect((saved['generators'] as List).first, {
-      'id': 'tier_1',
-      'currentLevel': 1,
-      'isAutomated': true,
-    });
+      await backgroundApp(tester);
+      expect(
+        preferences.getInt(SaveRepository.lastPlayedTimestampKey),
+        now.millisecondsSinceEpoch,
+      );
+      final saved =
+          jsonDecode(preferences.getString(SaveRepository.gameStateKey)!)
+              as Map<String, Object?>;
+      expect((saved['generators'] as List).first, {
+        'id': 'tier_1',
+        'currentLevel': 1,
+        'isAutomated': true,
+      });
 
-    // The tick engine is stopped while paused, so time isn't counted twice.
-    await tester.pump(const Duration(seconds: 5));
-    expect(cashText(tester), r'$0.00');
+      // The tick engine is stopped while away, so time isn't counted twice.
+      await tester.pump(const Duration(seconds: 5));
+      expect(cashText(tester), r'$0.00');
 
-    now = now.add(const Duration(hours: 1));
-    await foregroundApp(tester);
+      now = now.add(const Duration(hours: 1));
+      await foregroundApp(tester);
 
-    expect(find.text('Welcome Back!'), findsOneWidget);
-    expect(inDialog('1h 0m 0s'), findsOneWidget);
-    expect(inDialog(r'$3,600.00'), findsOneWidget);
-    expect(cashText(tester), r'$3,600.00');
-    expect(preferences.getInt(SaveRepository.lastPlayedTimestampKey), isNull);
+      expect(find.text('Welcome Back!'), findsOneWidget);
+      expect(inDialog('1h 0m 0s'), findsOneWidget);
+      expect(inDialog(r'$3,600.00'), findsOneWidget);
+      expect(cashText(tester), r'$3,600.00');
+      expect(preferences.getInt(SaveRepository.lastPlayedTimestampKey), isNull);
 
-    await tester.tap(find.text('Collect'));
-    await tester.pumpAndSettle();
-    expect(find.text('Welcome Back!'), findsNothing);
+      await tester.tap(find.text('Collect'));
+      await tester.pumpAndSettle();
+      expect(find.text('Welcome Back!'), findsNothing);
 
-    // Ticking resumed after returning (it also ran during the dialog's
-    // closing animation, so compare against the post-dismiss balance).
-    double cash() =>
-        double.parse(cashText(tester).replaceAll(RegExp(r'[$,]'), ''));
-    final afterDismiss = cash();
-    expect(afterDismiss, greaterThan(3600));
-    await tester.pump(const Duration(seconds: 1));
-    expect(cash(), closeTo(afterDismiss + 1, 0.001));
-  });
+      // Ticking resumed after returning (it also ran during the dialog's
+      // closing animation, so compare against the post-dismiss balance).
+      double cash() =>
+          double.parse(cashText(tester).replaceAll(RegExp(r'[$,]'), ''));
+      final afterDismiss = cash();
+      expect(afterDismiss, greaterThan(3600));
+      await tester.pump(const Duration(seconds: 1));
+      expect(cash(), closeTo(afterDismiss + 1, 0.001));
+    },
+  );
 
   testWidgets('cold start after being killed in the background awards '
       'offline earnings', (tester) async {
@@ -193,7 +196,9 @@ void main() {
     expect(cashText(tester), r'$185.00');
   });
 
-  testWidgets('resuming without a pause awards nothing', (tester) async {
+  testWidgets('regaining focus without being hidden awards nothing', (
+    tester,
+  ) async {
     await pumpGame(tester);
     await tester.tap(find.byKey(const ValueKey('upgrade_tier_1')));
     await tester.pump();
@@ -206,5 +211,31 @@ void main() {
 
     expect(find.text('Welcome Back!'), findsNothing);
     expect(cashText(tester), r'$0.00');
+  });
+
+  testWidgets('hiding without pausing (browser tab, minimized desktop '
+      'window) saves and awards offline earnings', (tester) async {
+    await pumpGame(tester);
+    await tester.tap(find.byKey(const ValueKey('upgrade_tier_1')));
+    await tester.pump();
+
+    // Web and desktop never report `paused`; they stop at `hidden`.
+    await sendLifecycle(tester, [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+    ]);
+    expect(
+      preferences.getInt(SaveRepository.lastPlayedTimestampKey),
+      now.millisecondsSinceEpoch,
+    );
+
+    now = now.add(const Duration(seconds: 45));
+    await sendLifecycle(tester, [
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]);
+
+    expect(find.text('Welcome Back!'), findsOneWidget);
+    expect(inDialog(r'$45.00'), findsOneWidget);
   });
 }

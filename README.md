@@ -45,11 +45,16 @@ lib/
 
 - **Start:** load the save, pay out any earnings since the last saved pause
   (covers the OS killing the app in the background), start the tick.
-- **Paused:** stop the tick (so time is never counted twice), save the game
+- **Hidden** (app backgrounded, window minimized, browser tab switched or
+  closed): stop the tick (so time is never counted twice), save the game
   and `last_played_timestamp`.
-- **Resumed:** pay out seconds elapsed × income/sec, show the Welcome Back
-  dialog, restart the tick. The timestamp is consumed so one absence is
-  never paid twice.
+- **Shown again:** pay out seconds elapsed × income/sec, show the Welcome
+  Back dialog, restart the tick. The timestamp is consumed so one absence
+  is never paid twice.
+
+These hook Flutter's `hidden` state rather than `paused`, because `paused`
+is only reported on iOS and Android. On phones `hidden` fires immediately
+before `paused`, so behaviour there is the same.
 
 Saves store only progress (cash and each generator's level and automation
 flag). Costs and outputs always come from the catalog in

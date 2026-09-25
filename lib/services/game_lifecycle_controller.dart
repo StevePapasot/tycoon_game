@@ -22,9 +22,15 @@ final gameLifecycleControllerProvider = Provider<GameLifecycleController>((
 ///
 /// * [start]: award earnings since the last saved pause (covers cold starts
 ///   after the OS killed the app), then start the engine.
-/// * App paused: stop the engine so time is never counted twice, then save
+/// * App hidden: stop the engine so time is never counted twice, then save
 ///   the game and `last_played_timestamp`.
-/// * App resumed: award earnings for the time away, then restart the engine.
+/// * App shown again: award earnings for the time away, then restart the
+///   engine.
+///
+/// This listens for hidden/shown rather than paused/resumed because Flutter
+/// only reports `paused` on iOS and Android. `hidden` is reported everywhere
+/// (minimized desktop window, background browser tab), and on iOS and
+/// Android it fires immediately before `paused`.
 class GameLifecycleController {
   GameLifecycleController(this._ref);
 
@@ -33,10 +39,7 @@ class GameLifecycleController {
 
   void start() {
     if (_listener != null) return;
-    _listener = AppLifecycleListener(
-      onPause: _handlePause,
-      onResume: _handleResume,
-    );
+    _listener = AppLifecycleListener(onHide: _handleHide, onShow: _handleShow);
     _collectOfflineEarnings();
     _ref.read(gameEngineProvider).start();
   }
@@ -46,14 +49,14 @@ class GameLifecycleController {
     _listener = null;
   }
 
-  void _handlePause() {
+  void _handleHide() {
     _ref.read(gameEngineProvider).stop();
     final repository = _ref.read(saveRepositoryProvider);
     unawaited(repository.saveGameState(_ref.read(gameProvider)));
     unawaited(repository.saveLastPlayedTimestamp(_ref.read(clockProvider)()));
   }
 
-  void _handleResume() {
+  void _handleShow() {
     _collectOfflineEarnings();
     _ref.read(gameEngineProvider).start();
   }
@@ -61,8 +64,8 @@ class GameLifecycleController {
   void _collectOfflineEarnings() {
     final repository = _ref.read(saveRepositoryProvider);
     final lastPlayed = repository.loadLastPlayedTimestamp();
-    // No timestamp: the app was only briefly inactive (never paused), or
-    // this pause has already been paid out.
+    // No timestamp: the app was never hidden (e.g. only briefly inactive),
+    // or this absence has already been paid out.
     if (lastPlayed == null) return;
     // Consume the timestamp so the same absence is never paid twice.
     unawaited(repository.clearLastPlayedTimestamp());
